@@ -1,9 +1,17 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+let puppeteer;
+let chrome = {};
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 
 dotenv.config();
+
+if (process.env.AWS_LAMBDA_FUNCTION_VERSION) {
+  chrome = require("chrome-aws-lambda");
+  puppeteer = require("puppeteer-core");
+} else {
+  puppeteer = require("puppeteer")
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -13,18 +21,17 @@ app.use(cookieParser());
 
 // Function to extract _token and cookies from the HTML response
 async function scrapeAttendanceData(username, password, date) {
-  const browser = await puppeteer.launch({
-    args: [
-      "--disable-setuid-sandbox",
-      "--no-sandbox",
-      "--single-process",
-      "--no-zygote",
-    ],
-    executablePath:
-      process.env.NODE_ENV === "production"
-        ? process.env.PUPPETEER_EXECUTABLE_PATH
-        : puppeteer.executablePath(),
-  });
+  let options = {};
+  if (process.env.AWS_LAMBDA_FUNCTION_VERSION) {
+    options = {
+      args: [...chrome.args, "--hide-scrollbars", "--disable-web-security"],
+      defaultViewport: chrome.defaultViewport,
+      executablePath: await chrome.executablePath,
+      headless: true,
+      ignoreHTTPSErrors: true,
+    };
+  }
+  const browser = await puppeteer.launch(options);
   const page = await browser.newPage();
 
   try {
@@ -63,7 +70,6 @@ async function scrapeAttendanceData(username, password, date) {
 app.post('/login', async (req, res) => {
   const { username, password, date } = req.body;
   console.log('username, password: ', username, password);
-
   try {
     const data = await scrapeAttendanceData(username, password, date);
     res.json(data);
